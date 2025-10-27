@@ -2,11 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#1a73e8" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Tasks" />
+    <meta name="format-detection" content="telephone=no" />
     
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
@@ -15,14 +16,51 @@
     
     <style>
       /* Prevent zoom on input focus for iOS */
-      input, select, textarea {
+      * {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+      }
+      
+      input, select, textarea, button {
         font-size: 16px !important;
       }
       
       /* Prevent pull-to-refresh and overscroll */
-      body {
-        overscroll-behavior-y: contain;
+      html, body {
+        margin: 0;
+        padding: 0;
+        overscroll-behavior-y: none;
+        overscroll-behavior-x: none;
         -webkit-overflow-scrolling: touch;
+        position: fixed;
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+      }
+      
+      #root {
+        width: 100%;
+        height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: none;
+      }
+      
+      /* Fix date/time input visibility on iOS */
+      input[type="date"],
+      input[type="time"] {
+        -webkit-appearance: none;
+        appearance: none;
+        background-color: white;
+        color: #111827;
+        padding: 8px 12px;
+      }
+      
+      input[type="date"]::-webkit-calendar-picker-indicator,
+      input[type="time"]::-webkit-calendar-picker-indicator {
+        filter: invert(0);
+        cursor: pointer;
       }
     </style>
   </head>

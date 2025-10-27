@@ -27,6 +27,28 @@ const WeightedTodoApp = () => {
   const [newListName, setNewListName] = useState('');
   const [newListColor, setNewListColor] = useState('#1a73e8');
 
+  // Request notification permission on load
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      // Show a button to request permission instead of auto-requesting
+      setTimeout(() => {
+        if (window.confirm('Enable notifications for task reminders?')) {
+          Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+              new Notification('Notifications Enabled!', {
+                body: 'You will receive reminders for your tasks',
+                icon: '/icon-192.png'
+              });
+            }
+          });
+        }
+      }, 2000);
+    }
+    
+    // Prevent pull-to-refresh
+    document.body.style.overscrollBehavior = 'none';
+  }, []);
+
   useEffect(() => {
     const savedTasks = JSON.parse(localStorage.getItem('tasks') || '[]');
     const savedLists = JSON.parse(localStorage.getItem('lists') || '[]');
@@ -77,11 +99,11 @@ const WeightedTodoApp = () => {
   }, []);
 
   useEffect(() => {
-    sessionStorage.setItem('tasks', JSON.stringify(tasks));
+    localStorage.setItem('tasks', JSON.stringify(tasks));
   }, [tasks]);
 
   useEffect(() => {
-    sessionStorage.setItem('lists', JSON.stringify(lists));
+    localStorage.setItem('lists', JSON.stringify(lists));
   }, [lists]);
 
   const { totalPoints, earnedPoints, progress } = useMemo(() => {
@@ -151,6 +173,30 @@ const WeightedTodoApp = () => {
     setTasks([...tasks, task]);
     setNewTask({ title: '', date: '', time: '', points: '', notes: '' });
     setShowAddTask(false);
+
+    // Schedule notification if date and time are set
+    if (newTask.date && newTask.time) {
+      scheduleNotification(task);
+    }
+  };
+
+  const scheduleNotification = (task) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const taskDateTime = new Date(`${task.date}T${task.time}`);
+      const now = new Date();
+      const delay = taskDateTime.getTime() - now.getTime();
+
+      if (delay > 0) {
+        setTimeout(() => {
+          new Notification('Task Reminder', {
+            body: `${task.title} - ${task.points} points`,
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            tag: task.id
+          });
+        }, delay);
+      }
+    }
   };
 
   const addList = () => {
@@ -355,7 +401,7 @@ const WeightedTodoApp = () => {
   const activeList = activeListId === 'starred' ? { name: 'Starred' } : lists.find((l) => l.id === activeListId);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50" style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}>
       {showCelebration && (
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50">
           <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
@@ -552,23 +598,32 @@ const WeightedTodoApp = () => {
                 placeholder="Task title"
                 value={newTask.title}
                 onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ fontSize: '16px' }}
                 autoFocus
               />
 
               <div className="grid grid-cols-2 gap-2 md:gap-3">
-                <input
-                  type="date"
-                  value={newTask.date}
-                  onChange={(e) => setNewTask({ ...newTask, date: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs md:text-sm"
-                />
-                <input
-                  type="time"
-                  value={newTask.time}
-                  onChange={(e) => setNewTask({ ...newTask, time: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs md:text-sm"
-                />
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={newTask.date}
+                    onChange={(e) => setNewTask({ ...newTask, date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    style={{ fontSize: '16px', colorScheme: 'light' }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Time</label>
+                  <input
+                    type="time"
+                    value={newTask.time}
+                    onChange={(e) => setNewTask({ ...newTask, time: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    style={{ fontSize: '16px', colorScheme: 'light' }}
+                  />
+                </div>
               </div>
 
               <div>
@@ -580,7 +635,8 @@ const WeightedTodoApp = () => {
                   placeholder="Enter points (e.g., 5)"
                   value={newTask.points}
                   onChange={(e) => setNewTask({ ...newTask, points: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ fontSize: '16px' }}
                   min="0"
                 />
               </div>
@@ -589,7 +645,8 @@ const WeightedTodoApp = () => {
                 placeholder="Notes (optional)"
                 value={newTask.notes}
                 onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ fontSize: '16px' }}
                 rows={3}
               />
 
@@ -634,19 +691,27 @@ const WeightedTodoApp = () => {
                   />
 
                   <div className="grid grid-cols-2 gap-2 md:gap-3">
+                    <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
                     <input
                       type="date"
                       value={editingTask.date}
                       onChange={(e) => setEditingTask({ ...editingTask, date: e.target.value })}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs md:text-sm"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      style={{ fontSize: '16px', colorScheme: 'light' }}
                     />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Time</label>
                     <input
                       type="time"
                       value={editingTask.time}
                       onChange={(e) => setEditingTask({ ...editingTask, time: e.target.value })}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs md:text-sm"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      style={{ fontSize: '16px', colorScheme: 'light' }}
                     />
                   </div>
+                </div>
 
                   <div>
                     <label className="block text-xs md:text-sm font-medium text-gray-700 mb-2">Points</label>
