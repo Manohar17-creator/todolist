@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Circle, CheckCircle2, Star, X, Clock, Calendar, Trash2, Edit2, Sparkles } from 'lucide-react';
-import motivationimage from './assets/motivation.jpg';
 
 const WeightedTodoApp = () => {
   const [tasks, setTasks] = useState([]);
@@ -29,8 +28,8 @@ const WeightedTodoApp = () => {
   const [newListColor, setNewListColor] = useState('#1a73e8');
 
   useEffect(() => {
-    const savedTasks = JSON.parse(sessionStorage.getItem('tasks') || '[]');
-    const savedLists = JSON.parse(sessionStorage.getItem('lists') || '[]');
+    const savedTasks = JSON.parse(localStorage.getItem('tasks') || '[]');
+    const savedLists = JSON.parse(localStorage.getItem('lists') || '[]');
     
     if (savedTasks.length > 0) {
       setTasks(savedTasks);
@@ -491,7 +490,7 @@ const WeightedTodoApp = () => {
 
             <div className="w-full md:w-[70%] relative rounded-2xl overflow-hidden shadow-lg h-40 md:h-auto">
               <img
-                src={motivationimage}
+                src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80"
                 alt="Motivation"
                 className="absolute inset-0 w-full h-full object-cover"
               />
