@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Circle, CheckCircle2, Star, X, Clock, Calendar, Trash2, Edit2, Sparkles } from 'lucide-react';
-import { requestNotificationPermission, triggerNotification } from './utils/notifications';
+import motivationimage from './assets/motivation.jpg'; 
 
 const WeightedTodoApp = () => {
   const [tasks, setTasks] = useState([]);
@@ -9,7 +9,7 @@ const WeightedTodoApp = () => {
     { id: 'work', name: 'Work', color: '#0f9d58' },
     { id: 'personal', name: 'Personal', color: '#f4b400' }
   ]);
-  const [activeListId, setActiveListId] = useState('starred');
+  const [activeListId, setActiveListId] = useState('my-tasks');
   const [showAddTask, setShowAddTask] = useState(false);
   const [showTaskDetail, setShowTaskDetail] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -68,7 +68,7 @@ const WeightedTodoApp = () => {
           title: 'Review quarterly reports',
           completed: false,
           points: 5,
-          date: new Date().toISOString().split('T')[0],
+          date: new Date().toLocaleDateString('en-CA'),
           time: '10:00',
           notes: 'Focus on Q4 metrics',
           subtasks: [],
@@ -80,7 +80,7 @@ const WeightedTodoApp = () => {
           title: 'Team standup meeting',
           completed: false,
           points: 2,
-          date: new Date().toISOString().split('T')[0],
+          date: new Date().toLocaleDateString('en-CA'),
           time: '09:00',
           subtasks: [],
           starred: true
@@ -91,7 +91,7 @@ const WeightedTodoApp = () => {
           title: 'Grocery shopping',
           completed: false,
           points: 3,
-          date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+          date:  new Date(Date.now() + 86400000).toLocaleDateString('en-CA'),
           subtasks: [],
           starred: false
         }
@@ -111,9 +111,19 @@ const WeightedTodoApp = () => {
     localStorage.setItem('lists', JSON.stringify(lists));
   }, [lists]);
 
+  useEffect(() => {
+    const saved = localStorage.getItem('activeListId');
+    if (saved) setActiveListId(saved);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('activeListId', activeListId);
+  }, [activeListId]);
+
+
   const { totalPoints, earnedPoints, progress } = useMemo(() => {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
     let todayTasks;
     
     if (activeListId === 'starred') {
@@ -137,8 +147,9 @@ const WeightedTodoApp = () => {
 
   const groupedTasks = useMemo(() => {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().split('T')[0];
-    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
+    const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('en-CA');
+
     
     let filtered;
     if (activeListId === 'starred') {
@@ -165,7 +176,7 @@ const WeightedTodoApp = () => {
     if (!newTask.title.trim() || !newTask.points) return;
 
     // Get user's local date properly
-    const taskDate = newTask.date || new Date().toISOString().split('T')[0];
+    const taskDate = newTask.date || new Date().toLocaleDateString('en-CA');
     const taskTime = newTask.time || '';
 
     const task = {
@@ -420,9 +431,9 @@ const WeightedTodoApp = () => {
   const activeList = activeListId === 'starred' ? { name: 'Starred' } : lists.find((l) => l.id === activeListId);
 
   return (
-    <div className="min-h-[100dvh] bg-gray-50 flex flex-col">
+    <div className="min-h-[100dvh] flex flex-col bg-gray-50 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <div className="min-h-full pb-24">
+
           {showCelebration && (
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50">
           <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
@@ -434,10 +445,8 @@ const WeightedTodoApp = () => {
           </div>
         </div>
       )}
-        </div>
 
-      <div className="p-4 md:p-8">
-        <div className="max-w-6xl mx-auto">
+      <div className="p-4 md:p-8 max-w-6xl mx-auto">
           <div className="mb-4 md:mb-6 sticky top-0 bg-gray-50 z-10 py-4">
             <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 mb-1">Tasks</h1>
             <p className="text-xs md:text-sm text-gray-500">Weighted to-do list</p>
@@ -558,7 +567,7 @@ const WeightedTodoApp = () => {
 
             <div className="w-full md:w-[70%] relative rounded-2xl overflow-hidden shadow-lg h-40 md:h-auto">
               <img
-                src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80"
+                src={motivationimage}
                 alt="Motivation"
                 className="absolute inset-0 w-full h-full object-cover"
               />
@@ -593,7 +602,7 @@ const WeightedTodoApp = () => {
               <p className="text-gray-500">Add your first task to get started</p>
             </div>
           )}
-        </div>
+        
       </div>
 
       {/* Floating Add Task Button */}
