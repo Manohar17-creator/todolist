@@ -2,54 +2,54 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+
+    <!-- ✅ Corrected viewport: allows proper scrolling & safe areas -->
+    <meta 
+      name="viewport" 
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+
+    <!-- ✅ PWA / iOS setup -->
     <meta name="theme-color" content="#1a73e8" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Tasks" />
     <meta name="format-detection" content="telephone=no" />
-    
+
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-    
+
     <title>Weighted To-Do List</title>
-    
+
     <style>
+      /* ✅ Better iOS-friendly base styles */
       * {
         -webkit-tap-highlight-color: transparent;
         -webkit-touch-callout: none;
+        box-sizing: border-box;
       }
-      
-      input, select, textarea, button {
-        font-size: 16px !important;
-      }
-      
-      html {
-        position: fixed;
+
+      html, body, #root {
         width: 100%;
         height: 100%;
-        overflow: hidden;
-      }
-      
-      body {
         margin: 0;
         padding: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        position: fixed;
-        overscroll-behavior: none;
+        overflow-x: hidden;
         -webkit-overflow-scrolling: touch;
       }
-      
-      #root {
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        position: fixed;
+
+      body {
+        background-color: #f9fafb;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        overscroll-behavior-y: none;
+        padding-bottom: env(safe-area-inset-bottom);
       }
-      
-      /* Fix date/time input visibility on iOS */
+
+      input, select, textarea, button {
+        font-size: 16px !important; /* Prevent zoom on input focus in iOS */
+      }
+
+      /* ✅ Fix iOS date/time field styling */
       input[type="date"],
       input[type="time"] {
         -webkit-appearance: none;
@@ -58,7 +58,7 @@
         color: #111827 !important;
         padding: 8px 12px;
       }
-      
+
       input[type="date"]::-webkit-calendar-picker-indicator,
       input[type="time"]::-webkit-calendar-picker-indicator {
         filter: invert(0);
@@ -73,7 +73,41 @@
       }
     </style>
   </head>
+
   <body>
     <div id="root"></div>
+
+    <!-- ✅ Register service worker for PWA + Notifications -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker
+          .register('/service-worker.js')
+          .then(() => console.log('✅ Service Worker registered successfully'))
+          .catch(err => console.error('❌ Service Worker registration failed:', err));
+      }
+
+      // ✅ Ask for notification permission
+      async function requestNotificationPermission() {
+        if (!('Notification' in window)) {
+          console.log('Notifications not supported');
+          return;
+        }
+
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          new Notification('✅ Notifications enabled!', {
+            body: 'You’ll now get updates when tasks are due.',
+            icon: '/icon-192.png'
+          });
+        } else {
+          console.log('Notifications permission:', permission);
+        }
+      }
+
+      // Call permission request after PWA is installed or loaded
+      window.addEventListener('load', () => {
+        requestNotificationPermission();
+      });
+    </script>
   </body>
 </html>

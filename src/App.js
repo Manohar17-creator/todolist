@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Circle, CheckCircle2, Star, X, Clock, Calendar, Trash2, Edit2, Sparkles } from 'lucide-react';
+import { requestNotificationPermission, triggerNotification } from './utils/notifications';
 
 const WeightedTodoApp = () => {
   const [tasks, setTasks] = useState([]);
@@ -190,6 +191,7 @@ const WeightedTodoApp = () => {
     }
   };
 
+  // ✅ Schedule notification locally (React handles delay, not service worker)
   const scheduleNotification = (task) => {
     if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
       const taskDateTime = new Date(`${task.date}T${task.time}`);
@@ -197,16 +199,24 @@ const WeightedTodoApp = () => {
       const delay = taskDateTime.getTime() - now.getTime();
 
       if (delay > 0) {
-        navigator.serviceWorker.ready.then(registration => {
-          registration.active.postMessage({
-            type: 'SCHEDULE_NOTIFICATION',
-            task: task,
-            delay: delay
+        setTimeout(() => {
+          // Send message to service worker
+          navigator.serviceWorker.ready.then((registration) => {
+            if (registration.active) {
+              registration.active.postMessage({
+                type: 'SHOW_NOTIFICATION',
+                title: '⏰ Task Reminder',
+                body: `${task.title} - ${task.points} points`,
+                tag: task.id,
+                icon: '/icon-192.png',
+              });
+            }
           });
-        });
+        }, delay);
       }
     }
   };
+
 
   const addList = () => {
     if (!newListName.trim()) return;
@@ -410,8 +420,8 @@ const WeightedTodoApp = () => {
   const activeList = activeListId === 'starred' ? { name: 'Starred' } : lists.find((l) => l.id === activeListId);
 
   return (
-    <div className="fixed inset-0 bg-gray-50 overflow-hidden">
-      <div className="h-full overflow-y-auto overflow-x-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
+    <div className="min-h-[100dvh] bg-gray-50 flex flex-col">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="min-h-full pb-24">
           {showCelebration && (
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50">
@@ -595,7 +605,7 @@ const WeightedTodoApp = () => {
       </button>
 
       {showAddTask && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-4 md:p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base md:text-lg font-semibold text-gray-900">Add new task</h3>
@@ -682,7 +692,7 @@ const WeightedTodoApp = () => {
       )}
 
       {showTaskDetail && selectedTask && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" overflow-y-auto>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             {editingTask ? (
               <div className="p-4 md:p-6">
@@ -886,7 +896,7 @@ const WeightedTodoApp = () => {
       )}
 
       {showAddList && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-4 md:p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base md:text-lg font-semibold text-gray-900">Add new list</h3>
