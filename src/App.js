@@ -163,14 +163,18 @@ const WeightedTodoApp = () => {
   const addTask = () => {
     if (!newTask.title.trim() || !newTask.points) return;
 
+    // Get user's local date properly
+    const taskDate = newTask.date || new Date().toISOString().split('T')[0];
+    const taskTime = newTask.time || '';
+
     const task = {
       id: Date.now().toString(),
       listId: activeListId === 'starred' ? 'my-tasks' : activeListId,
       title: newTask.title,
       completed: false,
       points: newTask.points,
-      date: newTask.date,
-      time: newTask.time,
+      date: taskDate,
+      time: taskTime,
       notes: newTask.notes,
       subtasks: [],
       starred: false
@@ -181,7 +185,7 @@ const WeightedTodoApp = () => {
     setShowAddTask(false);
 
     // Schedule notification if date and time are set
-    if (newTask.date && newTask.time) {
+    if (taskDate && taskTime) {
       scheduleNotification(task);
     }
   };
@@ -406,8 +410,10 @@ const WeightedTodoApp = () => {
   const activeList = activeListId === 'starred' ? { name: 'Starred' } : lists.find((l) => l.id === activeListId);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20" style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}>
-      {showCelebration && (
+    <div className="fixed inset-0 bg-gray-50 overflow-hidden">
+      <div className="h-full overflow-y-auto overflow-x-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="min-h-full pb-24">
+          {showCelebration && (
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50">
           <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
             <div className="flex items-center gap-2 text-xl font-bold">
@@ -418,10 +424,11 @@ const WeightedTodoApp = () => {
           </div>
         </div>
       )}
+        </div>
 
       <div className="p-4 md:p-8">
         <div className="max-w-6xl mx-auto">
-          <div className="mb-4 md:mb-6">
+          <div className="mb-4 md:mb-6 sticky top-0 bg-gray-50 z-10 py-4">
             <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 mb-1">Tasks</h1>
             <p className="text-xs md:text-sm text-gray-500">Weighted to-do list</p>
           </div>
@@ -933,6 +940,9 @@ const WeightedTodoApp = () => {
         </div>
       )}
     </div>
+
+    </div>
+
   );
 };
 
