@@ -27,10 +27,11 @@ const WeightedTodoApp = () => {
   const [newListName, setNewListName] = useState('');
   const [newListColor, setNewListColor] = useState('#1a73e8');
 
-  // Request notification permission on load
+  // Request notification permission on load (only once)
   useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      // Show a button to request permission instead of auto-requesting
+    const hasAskedPermission = localStorage.getItem('notificationAsked');
+    
+    if ('Notification' in window && Notification.permission === 'default' && !hasAskedPermission) {
       setTimeout(() => {
         if (window.confirm('Enable notifications for task reminders?')) {
           Notification.requestPermission().then(permission => {
@@ -40,7 +41,10 @@ const WeightedTodoApp = () => {
                 icon: '/icon-192.png'
               });
             }
+            localStorage.setItem('notificationAsked', 'true');
           });
+        } else {
+          localStorage.setItem('notificationAsked', 'true');
         }
       }, 2000);
     }
@@ -107,7 +111,8 @@ const WeightedTodoApp = () => {
   }, [lists]);
 
   const { totalPoints, earnedPoints, progress } = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().split('T')[0];
     let todayTasks;
     
     if (activeListId === 'starred') {
@@ -130,8 +135,9 @@ const WeightedTodoApp = () => {
   }, [progress, totalPoints]);
 
   const groupedTasks = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().split('T')[0];
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString().split('T')[0];
     
     let filtered;
     if (activeListId === 'starred') {
@@ -181,20 +187,19 @@ const WeightedTodoApp = () => {
   };
 
   const scheduleNotification = (task) => {
-    if ('Notification' in window && Notification.permission === 'granted') {
+    if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
       const taskDateTime = new Date(`${task.date}T${task.time}`);
       const now = new Date();
       const delay = taskDateTime.getTime() - now.getTime();
 
       if (delay > 0) {
-        setTimeout(() => {
-          new Notification('Task Reminder', {
-            body: `${task.title} - ${task.points} points`,
-            icon: '/icon-192.png',
-            badge: '/icon-192.png',
-            tag: task.id
+        navigator.serviceWorker.ready.then(registration => {
+          registration.active.postMessage({
+            type: 'SCHEDULE_NOTIFICATION',
+            task: task,
+            delay: delay
           });
-        }, delay);
+        });
       }
     }
   };
@@ -401,7 +406,7 @@ const WeightedTodoApp = () => {
   const activeList = activeListId === 'starred' ? { name: 'Starred' } : lists.find((l) => l.id === activeListId);
 
   return (
-    <div className="min-h-screen bg-gray-50" style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}>
+    <div className="min-h-screen bg-gray-50 pb-20" style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}>
       {showCelebration && (
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50">
           <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
@@ -820,8 +825,13 @@ const WeightedTodoApp = () => {
                         <button
                           onClick={() => {
                             toggleSubtask(selectedTask.id, subtask.id);
-                            const updated = tasks.find((t) => t.id === selectedTask.id);
-                            setSelectedTask(updated);
+                            // Update the selected task immediately to reflect changes
+                            setSelectedTask(prev => ({
+                              ...prev,
+                              subtasks: prev.subtasks.map(st => 
+                                st.id === subtask.id ? { ...st, completed: !st.completed } : st
+                              )
+                            }));
                           }}
                           className="flex-shrink-0"
                         >
@@ -837,19 +847,30 @@ const WeightedTodoApp = () => {
                       </div>
                     ))}
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Add a subtask"
-                    className="w-full px-3 py-2 text-xs md:text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && e.target.value.trim()) {
-                        addSubtask(selectedTask.id, e.target.value);
-                        e.target.value = '';
-                        const updated = tasks.find((t) => t.id === selectedTask.id);
-                        setSelectedTask(updated);
-                      }
-                    }}
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Add a subtask"
+                      id="subtask-input"
+                      className="flex-1 px-3 py-2 text-xs md:text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      style={{ fontSize: '16px' }}
+                    />
+                    <button
+                      onClick={() => {
+                        const input = document.getElementById('subtask-input');
+                        if (input.value.trim()) {
+                          addSubtask(selectedTask.id, input.value);
+                          input.value = '';
+                          // Update selected task to show new subtask
+                          const updated = tasks.find((t) => t.id === selectedTask.id);
+                          setSelectedTask(updated);
+                        }
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                    >
+                      Add
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
