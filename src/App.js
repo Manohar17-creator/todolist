@@ -1,3 +1,4 @@
+// App.js
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Circle, CheckCircle2, Star, X, Clock, Calendar, Trash2, Edit2, Sparkles } from 'lucide-react';
 import motivationimage from './assets/motivation.jpg'; 
@@ -37,68 +38,41 @@ const WeightedTodoApp = () => {
         if (window.confirm('Enable notifications for task reminders?')) {
           Notification.requestPermission().then(permission => {
             if (permission === 'granted') {
-              new Notification('Notifications Enabled!', {
-                body: 'You will receive reminders for your tasks',
-                icon: '/icon-192.png'
-              });
+              try {
+                new Notification('Notifications Enabled!', {
+                  body: 'You will receive reminders for your tasks',
+                  icon: '/icon-192.png'
+                });
+              } catch (e) {
+                // ignore if not allowed in Standalone or iOS
+              }
             }
             localStorage.setItem('notificationAsked', 'true');
           });
         } else {
           localStorage.setItem('notificationAsked', 'true');
         }
-      }, 2000);
+      }, 1000);
     }
     
-    // Prevent pull-to-refresh
-    document.body.style.overscrollBehavior = 'none';
+    // Prevent browser-level overscroll bounce from pushing the whole page (PWA-friendly)
+    // but allow individual scroll areas to behave normally:
+    document.documentElement.style.overscrollBehavior = 'contain';
   }, []);
 
+  // --- load saved lists & tasks (do not populate demo tasks) ---
   useEffect(() => {
     const savedTasks = JSON.parse(localStorage.getItem('tasks') || '[]');
     const savedLists = JSON.parse(localStorage.getItem('lists') || '[]');
     
-    if (savedTasks.length > 0) {
+    if (Array.isArray(savedTasks) && savedTasks.length > 0) {
       setTasks(savedTasks);
     } else {
-      setTasks([
-        {
-          id: '1',
-          listId: 'my-tasks',
-          title: 'Review quarterly reports',
-          completed: false,
-          points: 5,
-          date: new Date().toLocaleDateString('en-CA'),
-          time: '10:00',
-          notes: 'Focus on Q4 metrics',
-          subtasks: [],
-          starred: false
-        },
-        {
-          id: '2',
-          listId: 'work',
-          title: 'Team standup meeting',
-          completed: false,
-          points: 2,
-          date: new Date().toLocaleDateString('en-CA'),
-          time: '09:00',
-          subtasks: [],
-          starred: true
-        },
-        {
-          id: '3',
-          listId: 'personal',
-          title: 'Grocery shopping',
-          completed: false,
-          points: 3,
-          date:  new Date(Date.now() + 86400000).toLocaleDateString('en-CA'),
-          subtasks: [],
-          starred: false
-        }
-      ]);
+      // intentionally start empty (user requested removing default tasks)
+      setTasks([]);
     }
     
-    if (savedLists.length > 0) {
+    if (Array.isArray(savedLists) && savedLists.length > 0) {
       setLists(savedLists);
     }
   }, []);
@@ -122,7 +96,6 @@ const WeightedTodoApp = () => {
 
 
   const { totalPoints, earnedPoints, progress } = useMemo(() => {
-    const now = new Date();
     const today = new Date().toLocaleDateString('en-CA');
     let todayTasks;
     
@@ -141,16 +114,14 @@ const WeightedTodoApp = () => {
   useEffect(() => {
     if (progress === 100 && totalPoints > 0) {
       setShowCelebration(true);
-      setTimeout(() => setShowCelebration(false), 5000);
+      setTimeout(() => setShowCelebration(false), 4000);
     }
   }, [progress, totalPoints]);
 
   const groupedTasks = useMemo(() => {
-    const now = new Date();
     const today = new Date().toLocaleDateString('en-CA');
     const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('en-CA');
 
-    
     let filtered;
     if (activeListId === 'starred') {
       filtered = tasks.filter((t) => t.starred);
@@ -175,7 +146,7 @@ const WeightedTodoApp = () => {
   const addTask = () => {
     if (!newTask.title.trim() || !newTask.points) return;
 
-    // Get user's local date properly
+    // user's local date properly
     const taskDate = newTask.date || new Date().toLocaleDateString('en-CA');
     const taskTime = newTask.time || '';
 
@@ -192,43 +163,89 @@ const WeightedTodoApp = () => {
       starred: false
     };
 
-    setTasks([...tasks, task]);
+    setTasks(prev => [...prev, task]);
     setNewTask({ title: '', date: '', time: '', points: '', notes: '' });
     setShowAddTask(false);
 
-    // Schedule notification if date and time are set
+    // Schedule notification
     if (taskDate && taskTime) {
       scheduleNotification(task);
     }
   };
 
-  // ✅ Schedule notification locally (React handles delay, not service worker)
+  // Schedule notification: prefer registration.showNotification when possible,
+  // fallback to posting message into SW or using foreground Notification.
   const scheduleNotification = (task) => {
-    if ('serviceWorker' in navigator && 'Notification' in window && Notification.permission === 'granted') {
-      const taskDateTime = new Date(`${task.date}T${task.time}`);
-      const now = new Date();
-      const delay = taskDateTime.getTime() - now.getTime();
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
 
-      if (delay > 0) {
-        setTimeout(() => {
-          // Send message to service worker
-          navigator.serviceWorker.ready.then((registration) => {
-            if (registration.active) {
-              registration.active.postMessage({
-                type: 'SHOW_NOTIFICATION',
-                title: '⏰ Task Reminder',
-                body: `${task.title} - ${task.points} points`,
-                tag: task.id,
-                icon: '/icon-192.png',
-              });
-            }
-          });
-        }, delay);
+    // compute time
+    const taskDateTime = new Date(`${task.date}T${task.time}`);
+    const now = new Date();
+    const delay = taskDateTime.getTime() - now.getTime();
+
+    if (delay <= 0) {
+      // if time already passed, show immediately (foreground or SW)
+      triggerImmediateNotification(task);
+      return;
+    }
+
+    // setTimeout for scheduling while the PWA is open:
+    setTimeout(async () => {
+      // If service worker registration supports showNotification directly
+      if ('serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          if (reg && typeof reg.showNotification === 'function') {
+            reg.showNotification('⏰ Task Reminder', {
+              body: `${task.title} — ${task.points} pts`,
+              icon: '/icon-192.png',
+              tag: task.id,
+              data: { url: '/' },
+              renotify: true,
+            });
+            return;
+          }
+
+          // otherwise try posting a message to an active service worker
+          if (navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              title: '⏰ Task Reminder',
+              body: `${task.title} — ${task.points} pts`,
+              tag: task.id,
+              icon: '/icon-192.png'
+            });
+            return;
+          }
+        } catch (e) {
+          // continue to foreground Notification fallback below
+          console.warn('sw notification failed', e);
+        }
       }
+
+      // fallback - show a foreground notification (works in browsers that support Notification API)
+      triggerImmediateNotification(task);
+    }, Math.max(0, delay));
+  };
+
+  const triggerImmediateNotification = (task) => {
+    try {
+      // foreground notification when app is open
+      new Notification('⏰ Task Reminder', {
+        body: `${task.title} — ${task.points} pts`,
+        icon: '/icon-192.png',
+        tag: task.id
+      });
+    } catch (e) {
+      // If notifications not supported in this environment (iOS WebView historically),
+      // you can show an in-app toast or visual cue. For now, fallback to console and leave a visible in-app marker:
+      console.log('Unable to show native notification, fallback to in-app reminder', task);
+      // (Optional) implement a small in-app toast state to display reminders if you want persistent UI reminder.
     }
   };
 
-
+  // update/save, toggle, delete, task UI functions (unchanged logic)
   const addList = () => {
     if (!newListName.trim()) return;
     
@@ -238,7 +255,7 @@ const WeightedTodoApp = () => {
       color: newListColor
     };
     
-    setLists([...lists, newList]);
+    setLists(prev => [...prev, newList]);
     setNewListName('');
     setNewListColor('#1a73e8');
     setShowAddList(false);
@@ -430,23 +447,23 @@ const WeightedTodoApp = () => {
 
   const activeList = activeListId === 'starred' ? { name: 'Starred' } : lists.find((l) => l.id === activeListId);
 
+  // ---------- RENDER ----------
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-gray-50 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+    <div className="min-h-[100dvh] flex flex-col bg-gray-50">
       <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
-
-          {showCelebration && (
-        <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50">
-          <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
-            <div className="flex items-center gap-2 text-xl font-bold">
-              <Sparkles className="w-6 h-6" />
-              100% Complete! Amazing!
-              <Sparkles className="w-6 h-6" />
+        {showCelebration && (
+          <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50">
+            <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
+              <div className="flex items-center gap-2 text-xl font-bold">
+                <Sparkles className="w-6 h-6" />
+                100% Complete! Amazing!
+                <Sparkles className="w-6 h-6" />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="p-4 md:p-8 max-w-6xl mx-auto">
+        <div className="p-4 md:p-8 max-w-6xl mx-auto">
           <div className="mb-4 md:mb-6 sticky top-0 bg-gray-50 z-10 py-4">
             <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 mb-1">Tasks</h1>
             <p className="text-xs md:text-sm text-gray-500">Weighted to-do list</p>
@@ -565,11 +582,11 @@ const WeightedTodoApp = () => {
               )}
             </div>
 
-            <div className="w-full md:w-[70%] relative rounded-2xl overflow-hidden shadow-lg h-40 md:h-auto">
+            <div className="w-full md:w-[70%] relative rounded-2xl overflow-hidden shadow-lg">
               <img
                 src={motivationimage}
                 alt="Motivation"
-                className="absolute inset-0 w-full h-full object-cover"
+                className="absolute inset-0 w-full h-full object-cover min-h-[160px]"
               />
               
               <div className="absolute inset-0 bg-black bg-opacity-50"></div>
@@ -603,16 +620,19 @@ const WeightedTodoApp = () => {
             </div>
           )}
         
+        </div>
       </div>
 
       {/* Floating Add Task Button */}
       <button
         onClick={() => setShowAddTask(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 md:w-16 md:h-16 bg-blue-600 text-white rounded-full shadow-2xl hover:bg-blue-700 hover:scale-110 transition-all duration-200 flex items-center justify-center z-50"
+        className="fixed right-6 w-14 h-14 md:w-16 md:h-16 bg-blue-600 text-white rounded-full shadow-2xl hover:bg-blue-700 hover:scale-110 transition-all duration-200 flex items-center justify-center z-50"
+        style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
       >
         <Plus className="w-6 h-6 md:w-8 md:h-8" />
       </button>
 
+      {/* Modals (add task, detail, etc.) — unchanged UI markup below */}
       {showAddTask && (
          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-4 md:p-6 max-h-[90vh] overflow-y-auto">
@@ -851,7 +871,6 @@ const WeightedTodoApp = () => {
                         <button
                           onClick={() => {
                             toggleSubtask(selectedTask.id, subtask.id);
-                            // Update the selected task immediately to reflect changes
                             setSelectedTask(prev => ({
                               ...prev,
                               subtasks: prev.subtasks.map(st => 
@@ -887,7 +906,6 @@ const WeightedTodoApp = () => {
                         if (input.value.trim()) {
                           addSubtask(selectedTask.id, input.value);
                           input.value = '';
-                          // Update selected task to show new subtask
                           const updated = tasks.find((t) => t.id === selectedTask.id);
                           setSelectedTask(updated);
                         }
@@ -931,9 +949,7 @@ const WeightedTodoApp = () => {
                     <button
                       key={color}
                       onClick={() => setNewListColor(color)}
-                      className={`w-8 h-8 md:w-10 md:h-10 rounded-full transition-all ${
-                        newListColor === color ? 'ring-2 ring-offset-2 ring-blue-500' : ''
-                      }`}
+                      className={`w-8 h-8 md:w-10 md:h-10 rounded-full transition-all ${newListColor === color ? 'ring-2 ring-offset-2 ring-blue-500' : ''}`}
                       style={{ backgroundColor: color }}
                     />
                   ))}
@@ -959,9 +975,6 @@ const WeightedTodoApp = () => {
         </div>
       )}
     </div>
-
-    </div>
-
   );
 };
 
