@@ -29,6 +29,25 @@ const WeightedTodoApp = () => {
   const [newListName, setNewListName] = useState('');
   const [newListColor, setNewListColor] = useState('#1a73e8');
 
+    // --- Toast notification state for iOS PWA fallback ---
+  const [toast, setToast] = useState({ show: false, message: '' });
+
+  const showToast = (message) => {
+    // Show the toast visually
+    setToast({ show: true, message });
+
+    // Try subtle haptic feedback (supported on most iPhones & Android)
+    if (navigator.vibrate) {
+      // short vibration pulse (100ms)
+      navigator.vibrate([50, 30, 50]);
+    }
+
+    // Hide toast after 4 seconds
+    setTimeout(() => setToast({ show: false, message: '' }), 4000);
+  };
+
+
+
   // Request notification permission on load (only once)
   useEffect(() => {
     const hasAskedPermission = localStorage.getItem('notificationAsked');
@@ -229,21 +248,20 @@ const WeightedTodoApp = () => {
     }, Math.max(0, delay));
   };
 
-  const triggerImmediateNotification = (task) => {
+    const triggerImmediateNotification = (task) => {
     try {
-      // foreground notification when app is open
+      // Try normal Notification first
       new Notification('⏰ Task Reminder', {
         body: `${task.title} — ${task.points} pts`,
         icon: '/icon-192.png',
         tag: task.id
       });
     } catch (e) {
-      // If notifications not supported in this environment (iOS WebView historically),
-      // you can show an in-app toast or visual cue. For now, fallback to console and leave a visible in-app marker:
-      console.log('Unable to show native notification, fallback to in-app reminder', task);
-      // (Optional) implement a small in-app toast state to display reminders if you want persistent UI reminder.
+      // Fallback: show in-app toast if iOS blocks notifications
+      showToast(`⏰ ${task.title} — ${task.points} pts`);
     }
   };
+
 
   // update/save, toggle, delete, task UI functions (unchanged logic)
   const addList = () => {
@@ -441,6 +459,7 @@ const WeightedTodoApp = () => {
             )}
           </button>
         </div>
+      
       </div>
     );
   };
@@ -974,6 +993,15 @@ const WeightedTodoApp = () => {
           </div>
         </div>
       )}
+            {/* Toast Notification (for iOS PWAs) */}
+      <div className="sticky-header">
+      {toast.show && (
+        <div className="fixed top-[calc(env(safe-area-inset-top)+10px)] left-1/2 -translate-x-1/2 bg-blue-600 text-white text-sm md:text-base px-4 py-2 rounded-xl shadow-lg z-[1000] animate-fade-in-down">
+          {toast.message}
+        </div>
+      )}
+      </div>
+
     </div>
   );
 };

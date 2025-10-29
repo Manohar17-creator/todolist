@@ -22,3 +22,64 @@ body {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
 }
+
+/* -------------------------------
+   Sticky Header Shadow (iOS style)
+---------------------------------- */
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background-color: #fafafa; /* subtle background */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+}
+
+/* -------------------------------
+   Toast Notification (smooth fade)
+---------------------------------- */
+@keyframes fade-in-down {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes fade-out-up {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+}
+
+.toast-notification {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.7rem 1.4rem;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  animation: fade-in-down 0.3s ease-out, fade-out-up 0.3s ease-in 3.7s forwards;
+}
+
+/* Optional hover ripple on "+" button (feels native) */
+button.rounded-full:active {
+  transform: scale(0.95);
+  transition: transform 0.1s ease;
+}
