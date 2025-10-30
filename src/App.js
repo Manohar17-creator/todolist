@@ -42,6 +42,7 @@ const WeightedTodoApp = () => {
   const [newListName, setNewListName] = useState('');
   const [newListColor, setNewListColor] = useState('#1a73e8');
 
+
     // --- Toast notification state for iOS PWA fallback ---
   const [toast, setToast] = useState({ show: false, message: '' });
 
@@ -214,94 +215,88 @@ const WeightedTodoApp = () => {
 
     // Schedule notification
     if (taskDate && taskTime) {
-      scheduleNotification(task);
+      scheduleTaskNotification(task); // ✅ correct function name
+
     }
   };
+
+  // ✅ Helper to get or renew current push subscription
+const getCurrentSubscription = async () => {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    console.warn("⚠️ No active push subscription found — re-subscribing");
+    await subscribe(); // re-registers with backend
+    return reg.pushManager.getSubscription();
+  }
+  return sub;
+};
+
+// ✅ Cancel any existing scheduled notification for this task (on backend)
+const cancelScheduledNotification = async (taskId) => {
+  try {
+    await fetch(`${process.env.REACT_APP_API_URL}/push/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId }),
+    });
+    console.log(`🗑️ Canceled old schedule for task: ${taskId}`);
+  } catch (err) {
+    console.error('Failed to cancel scheduled notification:', err);
+  }
+};
+
 
   // Schedule notification: prefer registration.showNotification when possible,
   // fallback to posting message into SW or using foreground Notification.
-  const scheduleNotification = (task) => {
-    if (!('Notification' in window)) return;
-    if (Notification.permission !== 'granted') return;
-
-    // compute time
-    const taskDateTime = new Date(`${task.date}T${task.time}`);
-    const now = new Date();
-    const delay = taskDateTime.getTime() - now.getTime();
-
-    if (delay <= 0) {
-      // if time already passed, show immediately (foreground or SW)
-      sendNotification({
-        title: "Task Reminder ⏰",
-        body: `${task.title} — ${task.points} pts`,
-        icon: "/icon-192.png"
-      });
-      return;
-    }
-
-    // setTimeout for scheduling while the PWA is open:
-    setTimeout(async () => {
+  const scheduleTaskNotification = async (task) => {
   try {
-    const dateTime = `${task.date}T${task.time}`;
-    const delayMs = Math.max(0, new Date(dateTime) - new Date());
+    const taskTime = new Date(`${task.date}T${task.time}`);
+    const now = new Date();
+    const diff = taskTime - now;
 
-    // 🔹 1. Register push reminder with backend (works even if app is closed)
-    if ('serviceWorker' in navigator) {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-
-      if (sub) {
-        await fetch(`${process.env.REACT_APP_API_URL}/push/schedule`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            subscription: sub,
-            title: `⏰ Task Reminder`,
+    // 🕒 Case 1: Task within 5 minutes → local notification
+    if (diff > 0 && diff <= 5 * 60 * 1000) {
+      console.log(`⏰ Scheduling local reminder for ${task.title} in ${Math.round(diff / 1000)}s`);
+      setTimeout(async () => {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          await reg.showNotification('⏰ Task Reminder', {
             body: `${task.title} — ${task.points} pts`,
-            time: new Date(Date.now() + delayMs).toISOString(),
-          }),
-        });
-
-        console.log("✅ Scheduled backend push reminder:", task.title);
-        return; // backend will handle it
-      }
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            tag: task.id,
+            data: { url: '/' },
+            renotify: true,
+          });
+          console.log(`✅ Local reminder triggered for ${task.title}`);
+        } catch (err) {
+          console.error('Local notification failed:', err);
+        }
+      }, diff);
     }
 
-    // 🔹 2. Local fallback (for offline or no push support)
-    if ('serviceWorker' in navigator) {
-      const reg = await navigator.serviceWorker.ready;
-      if (reg?.showNotification) {
-        reg.showNotification('⏰ Task Reminder', {
-          body: `${task.title} — ${task.points} pts`,
-          icon: '/icon-192.png',
-          tag: task.id,
-          data: { url: '/' },
-          renotify: true,
-        });
-        return;
-      }
-
-      if (navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          type: 'SHOW_NOTIFICATION',
+    // 🌐 Case 2: Task more than 5 minutes away → schedule via backend
+    else if (diff > 5 * 60 * 1000) {
+      console.log(`🌐 Scheduling backend reminder for ${task.title} at ${taskTime}`);
+      await fetch(`${process.env.REACT_APP_API_URL}/push/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subscription: await getCurrentSubscription(),
           title: '⏰ Task Reminder',
           body: `${task.title} — ${task.points} pts`,
-          tag: task.id,
-          icon: '/icon-192.png',
-        });
-        return;
-      }
+          time: taskTime.toISOString(),
+        }),
+      });
+    } else {
+      console.log(`⚠️ Skipping past task: ${task.title}`);
     }
-
-    // 🔹 3. Fallback foreground notification
-    triggerImmediateNotification(task);
-
-  } catch (e) {
-    console.warn('⚠️ Failed to schedule notification:', e);
-    triggerImmediateNotification(task);
+  } catch (err) {
+    console.error('Error scheduling notification:', err);
   }
-}, Math.max(0, delay));
-  };
+};
+
 
     const triggerImmediateNotification = (task) => {
     try {
@@ -334,13 +329,19 @@ const WeightedTodoApp = () => {
     setShowAddList(false);
   };
 
-  const updateTask = () => {
-    if (!editingTask || !editingTask.title.trim()) return;
+  const updateTask = async () => {
+    setTasks(prevTasks =>
+      prevTasks.map(t => (t.id === editingTask.id ? editingTask : t))
+    );
 
-    setTasks(tasks.map((t) => t.id === editingTask.id ? editingTask : t));
+    // ✅ Re-schedule notification
+    await cancelScheduledNotification(editingTask.id);
+    scheduleTaskNotification(editingTask);
+
     setEditingTask(null);
     setShowTaskDetail(false);
   };
+
 
   const toggleTask = (id) => {
     setTasks(tasks.map((t) => 
@@ -348,11 +349,20 @@ const WeightedTodoApp = () => {
     ));
   };
 
-  const deleteTask = (id) => {
-    setTasks(tasks.filter((t) => t.id !== id));
+  const deleteTask = async (id) => {
+  try {
+    // ✅ 1. Remove from frontend
+    setTasks(prev => prev.filter(task => task.id !== id));
     setShowTaskDetail(false);
-    setSelectedTask(null);
-  };
+
+    // ✅ 2. Cancel backend schedule
+    await cancelScheduledNotification(id);
+    console.log(`🗑️ Canceled scheduled reminder for deleted task ${id}`);
+  } catch (err) {
+    console.error('Failed to cancel backend schedule on delete:', err);
+  }
+};
+
 
   const openTaskDetail = (task) => {
     setSelectedTask(task);
