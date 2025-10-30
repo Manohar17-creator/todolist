@@ -3,8 +3,8 @@ import cors from "cors";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import webPush from "web-push";
-import cron from "node-cron";
 import fs from "fs-extra";
+import schedule from "node-schedule";
 
 dotenv.config();
 const app = express();
@@ -22,15 +22,16 @@ try {
     console.log(`💾 Loaded ${scheduledTasks.length} scheduled tasks from file`);
   }
 } catch (err) {
-  console.error("Failed to load scheduledTasks.json:", err);
+  console.error("❌ Failed to load scheduledTasks.json:", err);
 }
 
+// Helper: Save tasks to file
 const saveTasks = () => {
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(scheduledTasks, null, 2));
     console.log("💾 scheduledTasks.json updated");
   } catch (err) {
-    console.error("Failed to save scheduledTasks.json:", err);
+    console.error("❌ Failed to save scheduledTasks.json:", err);
   }
 };
 
@@ -56,7 +57,7 @@ app.post("/push/subscribe", (req, res) => {
   res.status(201).json({ message: "Subscribed successfully!" });
 });
 
-// ✅ Immediate push (manual / instant trigger)
+// ✅ Send push immediately (manual test)
 app.post("/push/send", async (req, res) => {
   const payload = JSON.stringify(req.body);
   try {
@@ -73,10 +74,9 @@ app.post("/push/send", async (req, res) => {
   }
 });
 
-// ✅ Schedule future task
+// ✅ Schedule future task (main logic)
 app.post("/push/schedule", (req, res) => {
   const { subscription, title, body, time, taskId } = req.body;
-
   if (!subscription || !time || !taskId)
     return res.status(400).json({ error: "Missing fields" });
 
@@ -84,46 +84,42 @@ app.post("/push/schedule", (req, res) => {
   const now = new Date();
   const diff = taskTime - now;
 
-  // Remove any existing task with same ID (reschedule logic)
+  // Remove old task if rescheduling
   scheduledTasks = scheduledTasks.filter((t) => t.id !== taskId);
 
-  // If task is within 5 minutes, send immediately
-  if (diff <= 5 * 60 * 1000 && diff > 0) {
-    (async () => {
-      try {
-        await webPush.sendNotification(
-          subscription,
-          JSON.stringify({ title, body }),
-          { TTL: 60, urgency: "high" }
-        );
-        console.log(`⚡ Sent immediate reminder: ${title}`);
-      } catch (err) {
-        console.error("Push error:", err);
-      }
-    })();
-    return res.status(200).json({ message: "Sent immediately" });
-  }
+  // 🕒 Skip if past time
+  if (diff <= 0)
+    return res.status(400).json({ error: "Cannot schedule past tasks" });
 
-  // Otherwise, schedule for future
-  scheduledTasks.push({ id: taskId, subscription, title, body, time: taskTime });
+  // Save task and persist
+  const newTask = { id: taskId, subscription, title, body, time: taskTime };
+  scheduledTasks.push(newTask);
   saveTasks();
 
-  console.log(`🕒 Task scheduled: ${title} → ${taskTime.toLocaleString()}`);
+  // Register with node-schedule
+  registerTaskJob(newTask);
+
+  console.log(`📅 Scheduled task: "${title}" → ${taskTime.toLocaleString()}`);
   res.status(201).json({ message: "Task scheduled" });
 });
 
-// ✅ Cancel scheduled task
+// ✅ Cancel a scheduled task
 app.post("/push/cancel", (req, res) => {
   const { taskId } = req.body;
   if (!taskId) return res.status(400).json({ error: "Missing taskId" });
 
   const before = scheduledTasks.length;
   scheduledTasks = scheduledTasks.filter((t) => t.id !== taskId);
-  const after = scheduledTasks.length;
-
   saveTasks();
-  console.log(`🗑️ Canceled ${before - after} scheduled task(s) for ID: ${taskId}`);
-  res.json({ success: true, removed: before - after });
+
+  // Also cancel in node-schedule
+  const existingJob = schedule.scheduledJobs[taskId];
+  if (existingJob) {
+    existingJob.cancel();
+    console.log(`🗑️ Canceled scheduled job: ${taskId}`);
+  }
+
+  res.json({ success: true, removed: before - scheduledTasks.length });
 });
 
 // ✅ Health check endpoint
@@ -131,43 +127,49 @@ app.get("/", (req, res) => {
   res.send("✅ Weighted To-Do Push Server running successfully 🚀");
 });
 
-// -------------------- CRON JOB --------------------
-// Runs every minute to send due tasks
-cron.schedule("* * * * *", async () => {
+// -------------------- Node-Schedule Setup --------------------
+
+// Register a single task job
+const registerTaskJob = (task) => {
+  const taskTime = new Date(task.time);
   const now = new Date();
-  const remaining = [];
 
-  for (const task of scheduledTasks) {
-    const taskTime = new Date(task.time);
-    const diff = taskTime - now;
-
-    // ✅ Catch-up window: send any tasks missed within last 30 minutes
-    if (diff <= 60 * 1000 && diff >= -30 * 60 * 1000) {
-      try {
-        await webPush.sendNotification(
-          task.subscription,
-          JSON.stringify({
-            title: task.title,
-            body: `${task.body} (delayed notification catch-up)`,
-          }),
-          { TTL: 60, urgency: "high" }
-        );
-        console.log("✅ Sent catch-up reminder:", task.title);
-      } catch (err) {
-        console.error("❌ Failed to send catch-up reminder:", err);
-      }
-    } else if (diff > 60 * 1000) {
-      remaining.push(task); // keep future ones
-    }
+  if (taskTime <= now) {
+    console.log(`⚠️ Skipped expired task: ${task.title}`);
+    return;
   }
 
-  scheduledTasks = remaining;
-  saveTasks();
-});
+  schedule.scheduleJob(task.id, taskTime, async () => {
+    try {
+      await webPush.sendNotification(
+        task.subscription,
+        JSON.stringify({ title: task.title, body: task.body }),
+        { TTL: 60, urgency: "high" }
+      );
+      console.log(`✅ Sent reminder "${task.title}" at ${new Date().toLocaleTimeString()}`);
+    } catch (err) {
+      console.error(`❌ Failed to send "${task.title}":`, err);
+    }
 
+    // Remove task after sending
+    scheduledTasks = scheduledTasks.filter((t) => t.id !== task.id);
+    saveTasks();
+  });
+
+  console.log(`⏰ Job registered: "${task.title}" at ${taskTime.toLocaleString()}`);
+};
+
+// Re-register all tasks on startup
+const registerAllScheduledJobs = () => {
+  console.log(`🕒 Re-registering ${scheduledTasks.length} tasks...`);
+  for (const task of scheduledTasks) {
+    registerTaskJob(task);
+  }
+};
+
+// Call once when server starts
+registerAllScheduledJobs();
 
 // -------------------- START SERVER --------------------
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () =>
-  console.log(`🚀 Push server running on port ${PORT}`)
-);
+app.listen(PORT, () => console.log(`🚀 Push server running on port ${PORT}`));
