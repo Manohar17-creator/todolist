@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: weighted-todo-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: VAPID_PUBLIC_KEY
+        value: BHjlGax0lFhtuTUgyMLqcLi1K4-FhLgahUxicXAxDy10-K4KHOr7kaXzUy-lcZOZqYzBDGbwUyHKOCV2ozYIM_A
+      - key: VAPID_PRIVATE_KEY
+        value: 8Dj--Jnb0NhWr0BGSO3DQgAL6mcw3qDWqyBpJQo8x-A
+      - key: FRONTEND_URL
+        value: https://your-frontend.vercel.app
+      - key: PORT
+        value: 4000
