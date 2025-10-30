@@ -2,6 +2,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Circle, CheckCircle2, Star, X, Clock, Calendar, Trash2, Edit2, Sparkles } from 'lucide-react';
 import motivationimage from './assets/motivation.jpg'; 
+import usePushNotifications from "./hooks/usePushNotifications";
+
+
+
+
 
 const WeightedTodoApp = () => {
   const [tasks, setTasks] = useState([]);
@@ -16,6 +21,13 @@ const WeightedTodoApp = () => {
   const [selectedTask, setSelectedTask] = useState(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const { subscribe, sendNotification } = usePushNotifications(
+    process.env.REACT_APP_VAPID_PUBLIC_KEY,
+    process.env.REACT_APP_API_URL
+  );
+
+ 
+
 
   const [newTask, setNewTask] = useState({
     title: '',
@@ -53,25 +65,36 @@ const WeightedTodoApp = () => {
     const hasAskedPermission = localStorage.getItem('notificationAsked');
     
     if ('Notification' in window && Notification.permission === 'default' && !hasAskedPermission) {
-      setTimeout(() => {
-        if (window.confirm('Enable notifications for task reminders?')) {
-          Notification.requestPermission().then(permission => {
-            if (permission === 'granted') {
-              try {
-                new Notification('Notifications Enabled!', {
-                  body: 'You will receive reminders for your tasks',
-                  icon: '/icon-192.png'
-                });
-              } catch (e) {
-                // ignore if not allowed in Standalone or iOS
-              }
-            }
-            localStorage.setItem('notificationAsked', 'true');
-          });
-        } else {
-          localStorage.setItem('notificationAsked', 'true');
-        }
-      }, 1000);
+      setTimeout(async () => {
+  // Only ask once
+  if (localStorage.getItem('notificationAsked')) return;
+
+  const allow = window.confirm('Enable notifications for task reminders?');
+  localStorage.setItem('notificationAsked', 'true');
+
+  if (!allow) return;
+
+  // Ask for permission
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return;
+
+  try {
+    // ✅ Register push subscription (sends to your backend)
+    await subscribe();
+
+    // ✅ Optional: Show a local confirmation notification
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'SHOW_NOTIFICATION',
+        title: '✅ Notifications Enabled',
+        body: 'You’ll now receive reminders for your tasks',
+        icon: '/icon-192.png',
+      });
+    }
+  } catch (err) {
+    console.error('Push subscription failed:', err);
+  }
+}, 1000);
     }
     
     // Prevent browser-level overscroll bounce from pushing the whole page (PWA-friendly)
@@ -205,47 +228,76 @@ const WeightedTodoApp = () => {
 
     if (delay <= 0) {
       // if time already passed, show immediately (foreground or SW)
-      triggerImmediateNotification(task);
+      sendNotification({
+        title: "Task Reminder ⏰",
+        body: `${task.title} — ${task.points} pts`,
+        icon: "/icon-192.png"
+      });
       return;
     }
 
     // setTimeout for scheduling while the PWA is open:
     setTimeout(async () => {
-      // If service worker registration supports showNotification directly
-      if ('serviceWorker' in navigator) {
-        try {
-          const reg = await navigator.serviceWorker.ready;
-          if (reg && typeof reg.showNotification === 'function') {
-            reg.showNotification('⏰ Task Reminder', {
-              body: `${task.title} — ${task.points} pts`,
-              icon: '/icon-192.png',
-              tag: task.id,
-              data: { url: '/' },
-              renotify: true,
-            });
-            return;
-          }
+  try {
+    const dateTime = `${task.date}T${task.time}`;
+    const delayMs = Math.max(0, new Date(dateTime) - new Date());
 
-          // otherwise try posting a message to an active service worker
-          if (navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
-              type: 'SHOW_NOTIFICATION',
-              title: '⏰ Task Reminder',
-              body: `${task.title} — ${task.points} pts`,
-              tag: task.id,
-              icon: '/icon-192.png'
-            });
-            return;
-          }
-        } catch (e) {
-          // continue to foreground Notification fallback below
-          console.warn('sw notification failed', e);
-        }
+    // 🔹 1. Register push reminder with backend (works even if app is closed)
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+
+      if (sub) {
+        await fetch(`${process.env.REACT_APP_API_URL}/push/schedule`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subscription: sub,
+            title: `⏰ Task Reminder`,
+            body: `${task.title} — ${task.points} pts`,
+            time: new Date(Date.now() + delayMs).toISOString(),
+          }),
+        });
+
+        console.log("✅ Scheduled backend push reminder:", task.title);
+        return; // backend will handle it
+      }
+    }
+
+    // 🔹 2. Local fallback (for offline or no push support)
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg?.showNotification) {
+        reg.showNotification('⏰ Task Reminder', {
+          body: `${task.title} — ${task.points} pts`,
+          icon: '/icon-192.png',
+          tag: task.id,
+          data: { url: '/' },
+          renotify: true,
+        });
+        return;
       }
 
-      // fallback - show a foreground notification (works in browsers that support Notification API)
-      triggerImmediateNotification(task);
-    }, Math.max(0, delay));
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SHOW_NOTIFICATION',
+          title: '⏰ Task Reminder',
+          body: `${task.title} — ${task.points} pts`,
+          tag: task.id,
+          icon: '/icon-192.png',
+        });
+        return;
+      }
+    }
+
+    // 🔹 3. Fallback foreground notification
+    triggerImmediateNotification(task);
+
+  } catch (e) {
+    console.warn('⚠️ Failed to schedule notification:', e);
+    triggerImmediateNotification(task);
+  }
+}, Math.max(0, delay));
   };
 
     const triggerImmediateNotification = (task) => {
