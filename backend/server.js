@@ -141,25 +141,30 @@ cron.schedule("* * * * *", async () => {
     const taskTime = new Date(task.time);
     const diff = taskTime - now;
 
-    if (diff <= 60 * 1000 && diff >= -30 * 1000) {
+    // ✅ Catch-up window: send any tasks missed within last 30 minutes
+    if (diff <= 60 * 1000 && diff >= -30 * 60 * 1000) {
       try {
         await webPush.sendNotification(
           task.subscription,
-          JSON.stringify({ title: task.title, body: task.body }),
+          JSON.stringify({
+            title: task.title,
+            body: `${task.body} (delayed notification catch-up)`,
+          }),
           { TTL: 60, urgency: "high" }
         );
-        console.log("✅ Reminder sent:", task.title);
+        console.log("✅ Sent catch-up reminder:", task.title);
       } catch (err) {
-        console.error("❌ Failed to send scheduled reminder:", err);
+        console.error("❌ Failed to send catch-up reminder:", err);
       }
     } else if (diff > 60 * 1000) {
-      remaining.push(task);
+      remaining.push(task); // keep future ones
     }
   }
 
   scheduledTasks = remaining;
   saveTasks();
 });
+
 
 // -------------------- START SERVER --------------------
 const PORT = process.env.PORT || 4000;
