@@ -1,0 +1,12 @@
+name: Keep Render Awake
+on:
+  schedule:
+    - cron: "*/5 * * * *" # every 5 minutes
+  workflow_dispatch: # allows manual trigger
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep Render Backend Alive
+        run: |
+          curl -s -o /dev/null https://todolist-e038.onrender.com/ || true
