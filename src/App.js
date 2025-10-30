@@ -62,45 +62,18 @@ const WeightedTodoApp = () => {
 
   // Request notification permission on load (only once)
   useEffect(() => {
-    const hasAskedPermission = localStorage.getItem('notificationAsked');
-    
-    if ('Notification' in window && Notification.permission === 'default' && !hasAskedPermission) {
-      setTimeout(async () => {
-  // Only ask once
-  if (localStorage.getItem('notificationAsked')) return;
+  const hasAskedPermission = localStorage.getItem('notificationAsked');
 
-  const allow = window.confirm('Enable notifications for task reminders?');
-  localStorage.setItem('notificationAsked', 'true');
-
-  if (!allow) return;
-
-  // Ask for permission
-  const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return;
-
-  try {
-    // ✅ Register push subscription (sends to your backend)
-    await subscribe();
-
-    // ✅ Optional: Show a local confirmation notification
-    if (navigator.serviceWorker?.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type: 'SHOW_NOTIFICATION',
-        title: '✅ Notifications Enabled',
-        body: 'You’ll now receive reminders for your tasks',
-        icon: '/icon-192.png',
-      });
-    }
-  } catch (err) {
-    console.error('Push subscription failed:', err);
+  // ✅ Only setup the event listener — do NOT auto-ask iOS users
+  if ('Notification' in window && Notification.permission === 'default' && !hasAskedPermission) {
+    // Show a small toast or button prompt instead of auto-confirm
+    setShowNotificationPrompt(true);
   }
-}, 1000);
-    }
-    
-    // Prevent browser-level overscroll bounce from pushing the whole page (PWA-friendly)
-    // but allow individual scroll areas to behave normally:
-    document.documentElement.style.overscrollBehavior = 'contain';
-  }, []);
+
+  // ✅ Prevent Safari bounce scroll in PWA mode
+  document.documentElement.style.overscrollBehavior = 'contain';
+}, []);
+
 
   // --- load saved lists & tasks (do not populate demo tasks) ---
   useEffect(() => {
@@ -152,6 +125,35 @@ const WeightedTodoApp = () => {
     const prog = total > 0 ? Math.round((earned / total) * 100) : 0;
     return { totalPoints: total, earnedPoints: earned, progress: prog };
   }, [tasks, activeListId]);
+
+  const handleEnableNotifications = async () => {
+  localStorage.setItem('notificationAsked', 'true');
+
+  const allow = window.confirm('Enable notifications for task reminders?');
+  if (!allow) return;
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const permission = await Notification.requestPermission();
+
+    if (permission === 'granted') {
+      // ✅ Subscribe for push notifications (backend)
+      await subscribe();
+
+      // ✅ Local feedback notification
+      await reg.showNotification('✅ Notifications Enabled', {
+        body: 'You’ll now receive reminders for your tasks',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+      });
+    } else {
+      console.warn('Notifications permission denied');
+    }
+  } catch (err) {
+    console.error('Push subscription failed:', err);
+  }
+};
+
 
   useEffect(() => {
     if (progress === 100 && totalPoints > 0) {
@@ -539,6 +541,19 @@ const WeightedTodoApp = () => {
             <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 mb-1">Tasks</h1>
             <p className="text-xs md:text-sm text-gray-500">Weighted to-do list</p>
           </div>
+
+          {showNotificationPrompt && (
+          <div className="flex items-center justify-center p-3 bg-blue-50 border border-blue-200 rounded-lg mx-4 my-2">
+            <p className="text-sm text-blue-700 mr-3">Enable notifications for task reminders?</p>
+            <button
+              onClick={handleEnableNotifications}
+              className="px-3 py-1.5 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition"
+            >
+              Enable
+            </button>
+          </div>
+        )}
+
 
           <div className="flex items-center gap-2 mb-4 md:mb-6 overflow-x-auto pb-2">
             <button
