@@ -4,7 +4,7 @@ services:
     env: node
     rootDir: backend
     buildCommand: npm install
-    startCommand: node server.js
+    startCommand: npm start
     envVars:
       - key: VAPID_PUBLIC_KEY
         value: BHjlGax0lFhtuTUgyMLqcLi1K4-FhLgahUxicXAxDy10-K4KHOr7kaXzUy-lcZOZqYzBDGbwUyHKOCV2ozYIM_A
