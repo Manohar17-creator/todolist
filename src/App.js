@@ -26,7 +26,8 @@ const WeightedTodoApp = () => {
     process.env.REACT_APP_API_URL
   );
 
- 
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
+
 
 
   const [newTask, setNewTask] = useState({
